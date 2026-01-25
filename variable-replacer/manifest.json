@@ -1,0 +1,27 @@
+{
+  "id": "variable-replacer",
+  "name": "Variable Replacer",
+  "version": "1.1.0",
+  "description": "Detects placeholders in terminal output (YOUR_*, <var>, {{var}}, $VAR) and helps replace them with actual values",
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "contextmenu",
+    "clipboard",
+    "terminal:subscribe",
+    "terminal:read",
+    "terminal:write",
+    "dialog",
+    "notifications",
+    "storage"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "variable-replacer.replace-from-terminal",
+        "title": "Replace Variables in Terminal",
+        "category": "Variable Replacer"
+      }
+    ]
+  }
+}
