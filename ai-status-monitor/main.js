@@ -170,17 +170,23 @@ function detectStatus(content) {
 
   const tool = detectTool(content);
 
+  // Only detect status if an AI tool is actually running
+  // Don't show anything for regular shell sessions
+  if (!tool) {
+    return { status: STATUS.UNKNOWN, tool: null };
+  }
+
   if (tool === 'claude') {
     const result = detectClaudeStatus(content, lines);
     return { ...result, tool };
   }
 
-  // Generic detection for other tools
+  // Generic detection for other AI tools (gemini, opencode, aider)
   const lastLine = stripANSI(lines[lines.length - 1]).trim();
-  const shellPrompts = ['$ ', '# ', '% ', '❯ ', '> '];
-  for (const prompt of shellPrompts) {
-    if (lastLine.endsWith(prompt.trim())) {
-      return { status: STATUS.WAITING, tool: tool || 'shell', reason: 'prompt' };
+  const aiPrompts = ['gemini>', 'aider>', '❯ ', '> '];
+  for (const prompt of aiPrompts) {
+    if (lastLine.endsWith(prompt.trim()) || lastLine === prompt.trim()) {
+      return { status: STATUS.WAITING, tool, reason: 'prompt' };
     }
   }
 
@@ -192,17 +198,17 @@ self.__ondaPlugin = {
   onActivate: async function(onda) {
     console.log('[AI Status Monitor] Activating...');
 
-    // Add status bar item
+    // Add status bar item (hidden by default until AI detected)
     try {
       const result = await onda.statusBar.addItem({
         id: 'ai-status',
-        text: '○ AI',
-        tooltip: 'AI Status: idle',
+        text: '',  // Empty initially - shown only when AI detected
+        tooltip: 'AI Status Monitor',
         position: 'right',
         priority: 100
       });
       statusBarItemId = result?.id || 'ai-status';
-      console.log('[AI Status Monitor] Status bar item added');
+      console.log('[AI Status Monitor] Status bar item added (hidden until AI detected)');
     } catch (e) {
       console.warn('[AI Status Monitor] Could not add status bar item:', e);
     }
@@ -236,17 +242,28 @@ self.__ondaPlugin = {
       const prevStatus = terminalStatuses.get(terminalId);
       terminalStatuses.set(terminalId, detection);
 
-      // Update status bar
+      // Update status bar (only show when AI tool detected)
       if (statusBarItemId) {
-        const indicator = STATUS_INDICATOR[detection.status] || '○';
-        const toolName = detection.tool ? ` ${detection.tool}` : '';
-        try {
-          await onda.statusBar.updateItem(statusBarItemId, {
-            text: `${indicator}${toolName}`,
-            tooltip: `AI Status: ${detection.status}${detection.reason ? ` (${detection.reason})` : ''}`
-          });
-        } catch (e) {
-          // Ignore status bar errors
+        if (detection.tool && detection.status !== STATUS.UNKNOWN) {
+          const indicator = STATUS_INDICATOR[detection.status] || '○';
+          try {
+            await onda.statusBar.updateItem(statusBarItemId, {
+              text: `${indicator} ${detection.tool}`,
+              tooltip: `AI Status: ${detection.status}${detection.reason ? ` (${detection.reason})` : ''}`
+            });
+          } catch (e) {
+            // Ignore status bar errors
+          }
+        } else {
+          // Hide status bar item when no AI detected
+          try {
+            await onda.statusBar.updateItem(statusBarItemId, {
+              text: '',
+              tooltip: 'AI Status Monitor (no AI detected)'
+            });
+          } catch (e) {
+            // Ignore status bar errors
+          }
         }
       }
 
