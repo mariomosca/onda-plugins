@@ -1,0 +1,33 @@
+{
+  "id": "ai-status-monitor",
+  "name": "AI Status Monitor",
+  "version": "1.0.0",
+  "description": "Monitor AI coding agents (Claude Code, Gemini, etc.) status in terminals. Shows busy/waiting/idle states.",
+  "author": {
+    "name": "Onda Team"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "terminal:read",
+    "terminal:subscribe",
+    "notifications",
+    "statusbar"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "ai-status-monitor.check-status",
+        "title": "Check AI Status",
+        "category": "AI",
+        "icon": "zap"
+      },
+      {
+        "id": "ai-status-monitor.toggle-notifications",
+        "title": "Toggle AI Waiting Notifications",
+        "category": "AI"
+      }
+    ]
+  }
+}
