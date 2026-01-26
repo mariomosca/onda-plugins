@@ -1,0 +1,42 @@
+{
+  "id": "claude-plans-viewer",
+  "name": "Claude Plans Viewer",
+  "version": "1.0.0",
+  "description": "View and track Claude Code implementation plans. Shows plan progress, tasks, and associates plans with workspaces.",
+  "author": {
+    "name": "Onda Team"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "panel",
+    "notifications",
+    "storage",
+    "filesystem:read"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "claude-plans-viewer.show-panel",
+        "title": "Show Claude Plans",
+        "category": "Plans",
+        "icon": "file-text"
+      },
+      {
+        "id": "claude-plans-viewer.refresh",
+        "title": "Refresh Plans",
+        "category": "Plans",
+        "icon": "refresh-cw"
+      }
+    ],
+    "panels": [
+      {
+        "id": "plans",
+        "title": "Claude Plans",
+        "icon": "file-text",
+        "position": "right"
+      }
+    ]
+  }
+}
