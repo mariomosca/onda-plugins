@@ -13,7 +13,8 @@
     "notifications",
     "storage",
     "filesystem:read",
-    "filesystem:write"
+    "filesystem:write",
+    "terminal:write"
   ],
   "activationEvents": ["onStartup"],
   "contributes": {

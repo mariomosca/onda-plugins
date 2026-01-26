@@ -235,6 +235,7 @@ function generateDetailHTML(plan) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #3f3f46;">
         <span data-action="back" style="background:#3f3f46;color:#fafafa;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px;"><onda-icon name="arrow-left"/> Back</span>
         <span style="color:#71717a;font-size:11px;flex:1;text-align:right;">${escapeHtml(plan.filename)}</span>
+        <span data-action="paste-path" data-payload='{"path":"${escapeHtml(plan.path)}"}' style="background:#3f3f46;color:#a1a1aa;padding:4px 8px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;" title="Paste path to terminal"><onda-icon name="terminal"/></span>
         <span data-action="delete" data-payload='{"planId":"${plan.id}"}' style="background:#7f1d1d;color:#fca5a5;padding:4px 8px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;" title="Move to trash"><onda-icon name="trash"/></span>
       </div>
 
@@ -593,6 +594,26 @@ self.__ondaPlugin = {
     onda.panel.onAction('delete', (payload) => {
       if (payload?.planId) {
         deletePlan(payload.planId);
+      }
+    });
+
+    onda.panel.onAction('paste-path', async (payload) => {
+      if (payload?.path) {
+        try {
+          await onda.terminal.write(payload.path);
+          await onda.notifications.show({
+            message: 'Path pasted to terminal',
+            type: 'info',
+            duration: 1500
+          });
+        } catch (e) {
+          console.error('[Claude Plans] Failed to paste to terminal:', e);
+          await onda.notifications.show({
+            message: 'Failed to paste to terminal',
+            type: 'error',
+            duration: 2000
+          });
+        }
       }
     });
 
