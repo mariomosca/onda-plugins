@@ -604,7 +604,7 @@ self.__ondaPlugin = {
     await onda.panel.register({
       id: 'plans',
       title: 'Claude Plans',
-      icon: '&#x1F4CB;',
+      icon: '📋',
       position: 'right',
       width: 320,
       minWidth: 280,
