@@ -304,18 +304,25 @@ async function scanPlans(onda) {
 }
 
 /**
- * Get home directory path via storage or fallback
+ * Get home directory path via filesystem API
  */
 async function getHomePath(onda) {
-  // Try to get cached home path
+  // Try to get cached home path first
   try {
     const stored = await onda.storage.get('homePath');
     if (stored) return stored;
   } catch (e) {}
 
-  // Default fallback - will work on most systems
-  // The filesystem API in Onda resolves ~ automatically
-  return '/Users/' + (typeof process !== 'undefined' ? process.env.USER : 'user');
+  // Use filesystem API to get home directory
+  try {
+    const homePath = await onda.filesystem.getHome();
+    // Cache for future use
+    await onda.storage.set('homePath', homePath);
+    return homePath;
+  } catch (e) {
+    console.error('[Claude Plans] Failed to get home path:', e);
+    throw new Error('Could not determine home directory');
+  }
 }
 
 /**
