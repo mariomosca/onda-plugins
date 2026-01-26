@@ -237,6 +237,9 @@ function generateDetailHTML(plan) {
           ← Back
         </button>
         <span style="color:#71717a;font-size:11px;flex:1;text-align:right;">${escapeHtml(plan.filename)}</span>
+        <button data-action="delete" data-payload='{"planId":"${plan.id}"}' style="background:#7f1d1d;border:none;color:#fca5a5;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;" title="Move to trash">
+          &#x1F5D1;
+        </button>
       </div>
 
       <!-- Title and status -->
@@ -383,7 +386,10 @@ function generateListHTML(plans, filter = null) {
         ${getProgressBar(progress)}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
           <span style="color:#71717a;font-size:11px;">${plan.tasks.completed}/${plan.tasks.total} tasks</span>
-          <span style="color:#71717a;font-size:11px;">${formatDate(plan.modifiedAt)}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:#71717a;font-size:11px;">${formatDate(plan.modifiedAt)}</span>
+            <button data-action="delete" data-payload='{"planId":"${plan.id}"}' onclick="event.stopPropagation()" style="background:transparent;border:none;color:#71717a;padding:2px 4px;cursor:pointer;font-size:12px;opacity:0.6;transition:opacity 0.2s;" onmouseover="this.style.opacity='1';this.style.color='#ef4444'" onmouseout="this.style.opacity='0.6';this.style.color='#71717a'" title="Move to trash">&#x1F5D1;</button>
+          </div>
         </div>
         ${plan.tasks.pending.length > 0 ? `
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid #3f3f46;">
@@ -530,6 +536,47 @@ async function goBack() {
   await updatePanel(ondaRef);
 }
 
+/**
+ * Handle plan deletion
+ */
+async function deletePlan(planId) {
+  if (!ondaRef) return;
+
+  const plan = plansCache.find(p => p.id === planId);
+  if (!plan) return;
+
+  try {
+    // Delete the file (moves to trash)
+    await ondaRef.filesystem.deleteFile(plan.path);
+
+    // Remove from cache
+    plansCache = plansCache.filter(p => p.id !== planId);
+
+    // If we're in detail view of the deleted plan, go back to list
+    if (currentView === 'detail' && selectedPlanId === planId) {
+      currentView = 'list';
+      selectedPlanId = null;
+    }
+
+    // Update panel
+    await updatePanel(ondaRef);
+
+    // Show notification
+    await ondaRef.notifications.show({
+      message: 'Plan moved to trash',
+      type: 'info',
+      duration: 2000
+    });
+  } catch (e) {
+    console.error('[Claude Plans] Failed to delete plan:', e);
+    await ondaRef.notifications.show({
+      message: 'Failed to delete plan',
+      type: 'error',
+      duration: 3000
+    });
+  }
+}
+
 // Plugin entry point
 self.__ondaPlugin = {
   onActivate: async function(onda) {
@@ -545,6 +592,12 @@ self.__ondaPlugin = {
 
     onda.panel.onAction('back', () => {
       goBack();
+    });
+
+    onda.panel.onAction('delete', (payload) => {
+      if (payload?.planId) {
+        deletePlan(payload.planId);
+      }
     });
 
     // Register panel

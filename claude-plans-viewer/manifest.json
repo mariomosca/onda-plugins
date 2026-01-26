@@ -12,7 +12,8 @@
     "panel",
     "notifications",
     "storage",
-    "filesystem:read"
+    "filesystem:read",
+    "filesystem:write"
   ],
   "activationEvents": ["onStartup"],
   "contributes": {
