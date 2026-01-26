@@ -628,6 +628,15 @@ self.__ondaPlugin = {
       maxWidth: 500
     });
 
+    // Add App Rail item for quick access
+    await onda.appRail.addItem({
+      id: 'plans',
+      icon: 'file-text',
+      tooltip: 'Claude Plans',
+      panelId: 'plans',  // Links to the panel - clicking toggles it
+      priority: 10       // Lower = higher in the list
+    });
+
     // Initial scan
     await scanPlans(onda);
 

@@ -10,6 +10,7 @@
   "capabilities": [
     "commands",
     "panel",
+    "appRail",
     "notifications",
     "storage",
     "filesystem:read",
