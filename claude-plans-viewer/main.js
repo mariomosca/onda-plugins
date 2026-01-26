@@ -233,13 +233,9 @@ function generateDetailHTML(plan) {
     <div style="padding:0;">
       <!-- Header with back button -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #3f3f46;">
-        <button data-action="back" style="background:#3f3f46;border:none;color:#fafafa;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;">
-          ← Back
-        </button>
+        <span data-action="back" style="background:#3f3f46;color:#fafafa;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:4px;"><onda-icon name="arrow-left"/> Back</span>
         <span style="color:#71717a;font-size:11px;flex:1;text-align:right;">${escapeHtml(plan.filename)}</span>
-        <button data-action="delete" data-payload='{"planId":"${plan.id}"}' style="background:#7f1d1d;border:none;color:#fca5a5;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:12px;" title="Move to trash">
-          &#x1F5D1;
-        </button>
+        <span data-action="delete" data-payload='{"planId":"${plan.id}"}' style="background:#7f1d1d;color:#fca5a5;padding:4px 8px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;" title="Move to trash"><onda-icon name="trash"/></span>
       </div>
 
       <!-- Title and status -->
@@ -324,7 +320,7 @@ function generateListHTML(plans, filter = null) {
   if (plans.length === 0) {
     return `
       <div style="text-align:center;padding:40px 20px;color:#71717a;">
-        <div style="font-size:32px;margin-bottom:12px;">&#x1F4CB;</div>
+        <div style="margin-bottom:12px;"><onda-icon name="file-text" size="32"/></div>
         <div style="font-size:14px;margin-bottom:8px;">No plans found</div>
         <div style="font-size:12px;">Claude Code plans will appear here</div>
       </div>
@@ -388,7 +384,7 @@ function generateListHTML(plans, filter = null) {
           <span style="color:#71717a;font-size:11px;">${plan.tasks.completed}/${plan.tasks.total} tasks</span>
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="color:#71717a;font-size:11px;">${formatDate(plan.modifiedAt)}</span>
-            <button data-action="delete" data-payload='{"planId":"${plan.id}"}' onclick="event.stopPropagation()" style="background:transparent;border:none;color:#71717a;padding:2px 4px;cursor:pointer;font-size:12px;opacity:0.6;transition:opacity 0.2s;" onmouseover="this.style.opacity='1';this.style.color='#ef4444'" onmouseout="this.style.opacity='0.6';this.style.color='#71717a'" title="Move to trash">&#x1F5D1;</button>
+            <span data-action="delete" data-payload='{"planId":"${plan.id}"}' style="color:#71717a;padding:2px 4px;cursor:pointer;opacity:0.6;display:inline-flex;align-items:center;" title="Move to trash"><onda-icon name="trash"/></span>
           </div>
         </div>
         ${plan.tasks.pending.length > 0 ? `
@@ -604,7 +600,7 @@ self.__ondaPlugin = {
     await onda.panel.register({
       id: 'plans',
       title: 'Claude Plans',
-      icon: '📋',
+      icon: 'file-text',  // Use Lucide icon name
       position: 'right',
       width: 320,
       minWidth: 280,
