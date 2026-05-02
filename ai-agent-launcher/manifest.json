@@ -1,0 +1,55 @@
+{
+  "id": "ai-agent-launcher",
+  "name": "AI Agent Launcher",
+  "version": "1.0.0",
+  "description": "Launch AI coding agents (Claude Code, Codex, Gemini CLI) with preset configurations",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "terminal:write",
+    "panel",
+    "appRail",
+    "storage",
+    "notifications",
+    "dialog"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "ai-agent-launcher.open-panel",
+        "title": "Open AI Agent Launcher",
+        "category": "AI",
+        "icon": "bot"
+      },
+      {
+        "id": "ai-agent-launcher.launch-claude-plan",
+        "title": "Launch Claude Code (Plan Mode)",
+        "category": "AI",
+        "icon": "terminal"
+      },
+      {
+        "id": "ai-agent-launcher.launch-claude-edit",
+        "title": "Launch Claude Code (Accept Edits)",
+        "category": "AI",
+        "icon": "terminal"
+      },
+      {
+        "id": "ai-agent-launcher.launch-claude-full",
+        "title": "Launch Claude Code (Full Access)",
+        "category": "AI",
+        "icon": "terminal"
+      },
+      {
+        "id": "ai-agent-launcher.manage-presets",
+        "title": "Manage AI Agent Presets",
+        "category": "AI",
+        "icon": "settings"
+      }
+    ]
+  }
+}
