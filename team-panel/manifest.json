@@ -1,0 +1,57 @@
+{
+  "id": "team-panel",
+  "name": "Agent Team Panel",
+  "version": "0.1.0",
+  "description": "Read-only HUD for the Agent Team OS roster. Shows the 5 agents (Alita, Kai, Vera, Leo, Nico), their live status, inbox counts and recent threads — sourced from the public read API at ~/.agent-team-os/.",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca/agent-team-os"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "panel",
+    "filesystem:read",
+    "notifications",
+    "statusbar",
+    "keybindings"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "team-panel.toggle",
+        "title": "Toggle Team Panel",
+        "category": "Team",
+        "icon": "users"
+      },
+      {
+        "id": "team-panel.refresh",
+        "title": "Refresh Team Panel",
+        "category": "Team",
+        "icon": "refresh"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "team-panel.toggle",
+        "key": "Cmd+Shift+A",
+        "when": "always",
+        "label": "Toggle Team Panel"
+      }
+    ],
+    "panels": [
+      {
+        "id": "main",
+        "title": "Agent Team",
+        "icon": "users",
+        "position": "floating",
+        "floating": {
+          "defaultSize": { "width": 360, "height": 560 },
+          "defaultPosition": "bottom-right",
+          "minimizable": true
+        }
+      }
+    ]
+  }
+}
