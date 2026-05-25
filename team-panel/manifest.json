@@ -1,7 +1,7 @@
 {
   "id": "team-panel",
   "name": "Agent Team Panel",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Read-only HUD for the Agent Team OS roster. Shows the 5 agents (Alita, Kai, Vera, Leo, Nico), their live status, inbox counts and recent threads — sourced from the public read API at ~/.agent-team-os/.",
   "author": {
     "name": "Mario Mosca",

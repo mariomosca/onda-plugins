@@ -36,9 +36,9 @@ Restart Onda or run **Settings → Plugins → enable** if the panel doesn't aut
 - `commands` — `team-panel.toggle`, `team-panel.refresh` in the command palette.
 - `notifications` — reserved for future surfacing of urgent inbox events.
 
-## Known limits (v0.1.0)
+## Known limits (v0.2.0)
 
-- Avatars are rendered as colored initial bubbles. Real PNG avatars (`registry.avatar_path`) require a binary `readFile` API which Onda's plugin filesystem capability doesn't expose yet (it forces utf-8). Tracked for v0.2.
+- Avatars use the real PNG files (`registry.avatar_path` with fallback to `avatar_default_path` from `AGENT_MAP.json`), loaded via Onda's `filesystem.readFileBinary` and rendered as data URLs. If the binary API isn't available (older Onda builds), the panel falls back to colored initial bubbles.
 - No send / reply (read-only by design). To act on a message, open the relevant agent session and use `/inbox` + `/read`.
 - No file watch — uses polling. Tail latency of new messages: up to one poll cycle (5 s).
 - Companion agents (Sera/Riccia/Polo/Bit/Bolt brainstorm) not surfaced. Will be added when those ship.

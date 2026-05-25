@@ -21,13 +21,68 @@ self.__ondaPlugin = {
     const home = await api.filesystem.getHome();
     const ROOT = home + AGENT_TEAM_DIR_REL;
 
+    /**
+     * Cache of avatar → data URL keyed by absolute path. We probe a small
+     * list of extensions (png/jpg/jpeg/webp) so the user can swap formats
+     * after cropping in Preview.app without renaming. Cache is invalidated
+     * only by a plugin reload — fine, avatars change rarely.
+     */
+    const avatarCache = new Map();
+
+    async function tryReadBinary(absPath) {
+      if (typeof api.filesystem.readFileBinary !== 'function') return null;
+      try {
+        const res = await api.filesystem.readFileBinary(absPath);
+        if (res && res.base64 && !res.error) return res;
+      } catch (_) { /* fallthrough */ }
+      return null;
+    }
+
+    async function loadAvatarDataUrl(absPath) {
+      if (!absPath) return null;
+      if (avatarCache.has(absPath)) return avatarCache.get(absPath);
+
+      // Candidate paths: the declared one first, then the same path with
+      // each common image extension (so a `.png` registry entry still
+      // finds an existing `.jpeg` next to it).
+      const candidates = [absPath];
+      const lastDot = absPath.lastIndexOf('.');
+      const base = lastDot > 0 ? absPath.slice(0, lastDot) : absPath;
+      for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
+        const variant = base + ext;
+        if (variant !== absPath) candidates.push(variant);
+      }
+
+      for (const candidate of candidates) {
+        const res = await tryReadBinary(candidate);
+        if (res) {
+          const mime = res.mimeType || 'image/png';
+          const dataUrl = 'data:' + mime + ';base64,' + res.base64;
+          avatarCache.set(absPath, dataUrl);
+          return dataUrl;
+        }
+      }
+
+      avatarCache.set(absPath, null);
+      return null;
+    }
+
     // ──────────────────────────────────────────────────────────────
     // STATE
     // ──────────────────────────────────────────────────────────────
     let lastSnapshot = null;
     let pollTimer = null;
     let selectedAgent = null;        // when set, panel renders the agent detail view
+    let selectedThread = null;       // when set, panel renders a thread reader view
+    let selectedInboxMsg = null;     // { agent, file_name } when reading a pending inbox msg
     let lastError = null;
+
+    // Dedup caches — declared up here so the `let` initialization runs
+    // before any of the helpers below references them (avoids TDZ errors
+    // when the bundler reorders things).
+    let lastPushedHtml = '';
+    let lastEntrySignature = '';
+    let lastMinimizedHtml = '';
 
     // ──────────────────────────────────────────────────────────────
     // DATA LAYER
@@ -110,6 +165,34 @@ self.__ondaPlugin = {
       }
     }
 
+    /**
+     * Load the pending message envelopes for an agent (msg-*.json files in
+     * the inboxes directory). Returns up to `limit` most recent by name.
+     */
+    async function loadInboxMessages(agent, limit = 20) {
+      try {
+        const entries = await api.filesystem.readDir(ROOT + '/inboxes/' + agent);
+        if (!Array.isArray(entries)) return [];
+        const names = entries
+          .map((e) => (typeof e === 'string' ? e : e.name))
+          .filter((n) => typeof n === 'string' && n.startsWith('msg-') && n.endsWith('.json'))
+          .sort()
+          .reverse()
+          .slice(0, limit);
+        const msgs = [];
+        for (const n of names) {
+          const data = await readJson(ROOT + '/inboxes/' + agent + '/' + n);
+          if (data) {
+            data._file_name = n;
+            msgs.push(data);
+          }
+        }
+        return msgs;
+      } catch {
+        return [];
+      }
+    }
+
     async function loadRecentThreads(limit = 5) {
       try {
         const entries = await api.filesystem.readDir(ROOT + '/threads');
@@ -123,12 +206,25 @@ self.__ondaPlugin = {
         const threads = [];
         for (const file of files) {
           const data = await readJson(ROOT + '/threads/' + file);
-          if (data) threads.push(data);
+          if (data) {
+            // Capture the filename id so we can re-fetch the same thread
+            // later (the JSON usually has its own `thread_id` but falling
+            // back to the filename is safer if the writer skips it).
+            data._file_id = file.replace(/\.json$/, '');
+            threads.push(data);
+          }
         }
         return threads;
       } catch {
         return [];
       }
+    }
+
+    async function loadThreadById(threadFileId) {
+      if (!threadFileId) return null;
+      const data = await readJson(ROOT + '/threads/' + threadFileId + '.json');
+      if (data) data._file_id = threadFileId;
+      return data;
     }
 
     /**
@@ -165,16 +261,18 @@ self.__ondaPlugin = {
           const meta = map.agents[id];
           const reg = await loadRegistry(id);
           const inbox = await inboxCount(id);
+          // Avatar fallback chain (per v1.3 contract):
+          //   registry.avatar_path > AGENT_MAP.avatar_path > avatar_default_path
+          const avatarPath =
+            reg?.avatar_path || meta?.avatar_path || meta?.avatar_default_path || null;
+          const avatarDataUrl = await loadAvatarDataUrl(avatarPath);
           return {
             id,
             display_name: meta?.display_name || id,
             role: meta?.role || '',
             workspace_default: meta?.workspace_path || null,
-            avatar_path: reg?.avatar_path || meta?.avatar_path || null,
-            // Liveness rules (per v1.3 contract):
-            //   active && last_seen within STALE_MIN min → 'online'
-            //   active but last_seen stale            → 'idle'
-            //   !active                                → 'offline'
+            avatar_path: avatarPath,
+            avatar_data_url: avatarDataUrl,
             status: livenessOf(reg, STALE_MIN),
             workspace_path: reg?.workspace_path || null,
             last_seen: reg?.last_seen || null,
@@ -241,16 +339,27 @@ self.__ondaPlugin = {
       return day + 'd ago';
     }
 
-    function renderAvatarBubble(agent) {
-      const initial = (agent.display_name || agent.id).charAt(0).toUpperCase();
+    function renderAvatarBubble(agent, size) {
+      const s = size || 32;
       const hue = AGENT_HUE[agent.id] || '#94a3b8';
+      if (agent.avatar_data_url) {
+        return (
+          '<img src="' + esc(agent.avatar_data_url) + '" ' +
+          'alt="' + esc(agent.display_name) + '" ' +
+          'style="width:' + s + 'px;height:' + s + 'px;border-radius:50%;' +
+          'object-fit:cover;flex-shrink:0;' +
+          'border:1.5px solid ' + hue + '66;background:' + hue + '11;" />'
+        );
+      }
+      // Fallback: initial bubble
+      const initial = (agent.display_name || agent.id).charAt(0).toUpperCase();
       return (
         '<div style="' +
-        'width:32px;height:32px;border-radius:50%;' +
+        'width:' + s + 'px;height:' + s + 'px;border-radius:50%;' +
         'background:' + hue + '22;' +
         'border:1px solid ' + hue + '66;' +
         'display:flex;align-items:center;justify-content:center;' +
-        'color:' + hue + ';font-size:13px;font-weight:600;flex-shrink:0;' +
+        'color:' + hue + ';font-size:' + Math.round(s * 0.4) + 'px;font-weight:600;flex-shrink:0;' +
         '">' + esc(initial) + '</div>'
       );
     }
@@ -305,9 +414,14 @@ self.__ondaPlugin = {
       const ts = t.last_updated || t.updated_at || t.created_at || null;
       const statusColor =
         status === 'completed' ? '#22c55e' : status === 'in-progress' ? '#eab308' : '#60a5fa';
+      const fileId = t._file_id || '';
+      const payload = JSON.stringify({ file_id: fileId });
       return (
-        '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;' +
-        'border-radius:6px;font-size:11px;color:#d4d4d8;">' +
+        '<div data-action="select-thread" data-payload="' + esc(payload) + '" ' +
+        'style="display:flex;align-items:center;gap:8px;padding:6px 10px;' +
+        'border-radius:6px;font-size:11px;color:#d4d4d8;cursor:pointer;transition:background 120ms;" ' +
+        'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
+        'onmouseout="this.style.background=\'transparent\'">' +
           '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' +
           statusColor + ';flex-shrink:0;"></span>' +
           '<span style="color:#a1a1aa;">' + esc(from) + ' &rarr; ' + esc(to) + '</span>' +
@@ -316,6 +430,153 @@ self.__ondaPlugin = {
           '<span style="color:#71717a;font-size:10px;flex-shrink:0;">' +
             esc(relativeTime(ts)) +
           '</span>' +
+        '</div>'
+      );
+    }
+
+    function renderInboxMsgReader(msg, agentId) {
+      if (!msg) {
+        return (
+          '<div style="display:flex;flex-direction:column;gap:12px;height:100%;">' +
+            '<div data-action="back" style="' +
+            'display:flex;align-items:center;gap:6px;color:#a1a1aa;font-size:11px;' +
+            'cursor:pointer;padding:4px 8px;border-radius:4px;width:fit-content;" ' +
+            'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
+            'onmouseout="this.style.background=\'transparent\'">' +
+              '&larr; back' +
+            '</div>' +
+            '<div style="padding:16px;color:#a1a1aa;font-size:12px;">Message not found.</div>' +
+          '</div>'
+        );
+      }
+      const from = msg.from || '?';
+      const intent = msg.intent || msg.type || 'message';
+      const ts = msg.ts || msg.created_at || null;
+      const priority = msg.priority || 'normal';
+      const body =
+        typeof msg.payload === 'string'
+          ? msg.payload
+          : msg.payload && typeof msg.payload === 'object'
+          ? JSON.stringify(msg.payload, null, 2)
+          : msg.body || msg.text || '';
+      const refs = Array.isArray(msg.context_refs) ? msg.context_refs : [];
+      const fromColor = AGENT_HUE[from] || '#94a3b8';
+
+      return (
+        '<div style="display:flex;flex-direction:column;gap:10px;height:100%;overflow:hidden;">' +
+          '<div data-action="back" style="' +
+          'display:flex;align-items:center;gap:6px;color:#a1a1aa;font-size:11px;' +
+          'cursor:pointer;padding:4px 8px;border-radius:4px;width:fit-content;flex-shrink:0;" ' +
+          'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
+          'onmouseout="this.style.background=\'transparent\'">' +
+            '&larr; back to ' + esc(agentId) +
+          '</div>' +
+          '<div style="padding:0 10px;display:flex;flex-direction:column;gap:6px;flex-shrink:0;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<span style="color:' + fromColor + ';font-size:13px;font-weight:600;">' +
+                esc(from) + ' &rarr; ' + esc(agentId) +
+              '</span>' +
+              '<span style="background:#27272a;color:#d4d4d8;font-size:10px;padding:1px 6px;' +
+              'border-radius:9px;">' + esc(priority) + '</span>' +
+            '</div>' +
+            '<div style="color:#e4e4e7;font-size:13px;font-weight:500;">' + esc(intent) + '</div>' +
+            '<div style="color:#71717a;font-size:10px;">' + esc(relativeTime(ts)) + '</div>' +
+          '</div>' +
+          '<div style="border-top:1px solid #27272a;padding-top:8px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding-bottom:8px;">' +
+            '<div style="padding:8px 10px;border-radius:6px;background:rgba(255,255,255,0.02);' +
+            'border:1px solid #27272a;font-size:11px;color:#d4d4d8;white-space:pre-wrap;' +
+            'word-break:break-word;line-height:1.5;font-family:ui-monospace,Menlo,monospace;">' +
+              esc(body || '(empty payload)') +
+            '</div>' +
+            (refs.length
+              ? '<div style="padding:0 10px;color:#71717a;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">Context refs</div>' +
+                '<div style="padding:0 10px;display:flex;flex-direction:column;gap:4px;font-size:10px;color:#a1a1aa;font-family:ui-monospace,Menlo,monospace;">' +
+                  refs.map((r) => '<div style="word-break:break-all;">' + esc(String(r)) + '</div>').join('') +
+                '</div>'
+              : '') +
+          '</div>' +
+        '</div>'
+      );
+    }
+
+    function renderThreadReader(thread) {
+      if (!thread) {
+        return (
+          '<div style="display:flex;flex-direction:column;gap:12px;height:100%;">' +
+            '<div data-action="back" style="' +
+            'display:flex;align-items:center;gap:6px;color:#a1a1aa;font-size:11px;' +
+            'cursor:pointer;padding:4px 8px;border-radius:4px;width:fit-content;" ' +
+            'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
+            'onmouseout="this.style.background=\'transparent\'">' +
+              '&larr; back' +
+            '</div>' +
+            '<div style="padding:16px;color:#a1a1aa;font-size:12px;">Thread not found.</div>' +
+          '</div>'
+        );
+      }
+
+      const status = thread.status || 'open';
+      const intent = thread.intent || (thread.messages && thread.messages[0]?.intent) || 'message';
+      const from = thread.from || thread.initiator || (thread.messages && thread.messages[0]?.from) || '?';
+      const to = thread.to || thread.target || (thread.messages && thread.messages[0]?.to) || '?';
+      const statusColor =
+        status === 'completed' ? '#22c55e' : status === 'in-progress' ? '#eab308' : '#60a5fa';
+
+      const messages = Array.isArray(thread.messages) ? thread.messages : [];
+      const messagesHtml = messages.length
+        ? messages.map(renderMessage).join('')
+        : '<div style="color:#71717a;font-size:11px;padding:10px;">No messages in this thread.</div>';
+
+      return (
+        '<div style="display:flex;flex-direction:column;gap:10px;height:100%;">' +
+          '<div data-action="back" style="' +
+          'display:flex;align-items:center;gap:6px;color:#a1a1aa;font-size:11px;' +
+          'cursor:pointer;padding:4px 8px;border-radius:4px;width:fit-content;" ' +
+          'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
+          'onmouseout="this.style.background=\'transparent\'">' +
+            '&larr; back' +
+          '</div>' +
+          '<div style="padding:0 10px;display:flex;flex-direction:column;gap:6px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+              '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
+              statusColor + ';"></span>' +
+              '<span style="color:#e4e4e7;font-size:13px;font-weight:600;">' + esc(intent) + '</span>' +
+            '</div>' +
+            '<div style="color:#a1a1aa;font-size:11px;">' +
+              esc(from) + ' &rarr; ' + esc(to) + ' &middot; ' + esc(status) +
+            '</div>' +
+          '</div>' +
+          '<div style="border-top:1px solid #27272a;padding-top:8px;display:flex;flex-direction:column;gap:8px;' +
+          'overflow-y:auto;flex:1;">' +
+            messagesHtml +
+          '</div>' +
+        '</div>'
+      );
+    }
+
+    function renderMessage(msg) {
+      const from = msg.from || '?';
+      const ts = msg.ts || msg.created_at || msg.timestamp || null;
+      const body =
+        typeof msg.payload === 'string'
+          ? msg.payload
+          : msg.payload && typeof msg.payload === 'object'
+          ? JSON.stringify(msg.payload, null, 2)
+          : msg.body || msg.text || msg.intent || '';
+      const fromColor = AGENT_HUE[from] || '#94a3b8';
+      return (
+        '<div style="padding:8px 10px;border-radius:6px;background:rgba(255,255,255,0.02);' +
+        'border:1px solid #27272a;">' +
+          '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+            '<span style="font-size:11px;font-weight:600;color:' + fromColor + ';">' + esc(from) + '</span>' +
+            '<span style="font-size:10px;color:#71717a;">' + esc(relativeTime(ts)) + '</span>' +
+            (msg.type ? '<span style="font-size:10px;color:#a1a1aa;background:#27272a;' +
+              'padding:1px 6px;border-radius:9px;">' + esc(msg.type) + '</span>' : '') +
+          '</div>' +
+          '<div style="font-size:11px;color:#d4d4d8;white-space:pre-wrap;word-break:break-word;' +
+          'line-height:1.5;font-family:ui-monospace,Menlo,monospace;">' +
+            esc(body) +
+          '</div>' +
         '</div>'
       );
     }
@@ -341,50 +602,104 @@ self.__ondaPlugin = {
       );
     }
 
-    function renderAgentDetail(agent, snap) {
+    function renderInboxRow(msg) {
+      const from = msg.from || '?';
+      const intent = msg.intent || msg.type || 'message';
+      const ts = msg.ts || msg.created_at || msg.timestamp || null;
+      const priority = msg.priority || 'normal';
+      const priColor =
+        priority === 'urgent' ? '#ef4444' :
+        priority === 'high' ? '#f97316' :
+        priority === 'low' ? '#71717a' : '#60a5fa';
+      const fromColor = AGENT_HUE[from] || '#94a3b8';
+      const payload = JSON.stringify({ msg_id: msg.id, file_name: msg._file_name });
+      return (
+        '<div data-action="select-inbox-msg" data-payload="' + esc(payload) + '" ' +
+        'style="display:flex;align-items:center;gap:8px;padding:6px 10px;' +
+        'border-radius:6px;font-size:11px;color:#d4d4d8;cursor:pointer;' +
+        'transition:background 120ms;" ' +
+        'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
+        'onmouseout="this.style.background=\'transparent\'">' +
+          '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' +
+          priColor + ';flex-shrink:0;" title="' + esc(priority) + '"></span>' +
+          '<span style="color:' + fromColor + ';font-weight:600;font-size:10px;">' + esc(from) + '</span>' +
+          '<span style="color:#e4e4e7;flex:1;min-width:0;overflow:hidden;' +
+          'text-overflow:ellipsis;white-space:nowrap;">' + esc(intent) + '</span>' +
+          '<span style="color:#71717a;font-size:10px;flex-shrink:0;">' +
+            esc(relativeTime(ts)) + '</span>' +
+        '</div>'
+      );
+    }
+
+    function renderAgentDetail(agent, snap, inboxMessages) {
       const threadsForAgent = snap.threads.filter((t) => {
         const from = t.from || t.initiator || (t.messages && t.messages[0]?.from);
         const to = t.to || t.target || (t.messages && t.messages[0]?.to);
         return from === agent.id || to === agent.id;
       });
 
+      const inboxHtml = inboxMessages.length
+        ? inboxMessages.map(renderInboxRow).join('')
+        : '<div style="color:#71717a;font-size:11px;padding:6px 10px;font-style:italic;">' +
+          'No pending messages.</div>';
+
       const threadsHtml = threadsForAgent.length
         ? threadsForAgent.map(renderThreadRow).join('')
-        : '<div style="color:#71717a;font-size:11px;padding:6px 10px;">No threads involving ' +
-          esc(agent.display_name) + '.</div>';
+        : '<div style="color:#71717a;font-size:11px;padding:6px 10px;font-style:italic;">' +
+          'No threads.</div>';
 
       return (
-        '<div style="display:flex;flex-direction:column;gap:12px;height:100%;">' +
+        '<div style="display:flex;flex-direction:column;gap:12px;height:100%;overflow:hidden;">' +
           '<div data-action="back" style="' +
           'display:flex;align-items:center;gap:6px;color:#a1a1aa;font-size:11px;' +
-          'cursor:pointer;padding:4px 8px;border-radius:4px;width:fit-content;" ' +
+          'cursor:pointer;padding:4px 8px;border-radius:4px;width:fit-content;flex-shrink:0;" ' +
           'onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" ' +
           'onmouseout="this.style.background=\'transparent\'">' +
             '&larr; back to roster' +
           '</div>' +
-          '<div style="display:flex;align-items:center;gap:12px;padding:0 10px;">' +
-            renderAvatarBubble(agent) +
-            '<div style="display:flex;flex-direction:column;gap:2px;">' +
+          '<div style="display:flex;align-items:center;gap:12px;padding:0 10px;flex-shrink:0;">' +
+            renderAvatarBubble(agent, 40) +
+            '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;">' +
               '<div style="color:#e4e4e7;font-size:15px;font-weight:600;">' +
                 esc(agent.display_name) +
               '</div>' +
               '<div style="color:#a1a1aa;font-size:11px;">' + esc(agent.role) + '</div>' +
             '</div>' +
           '</div>' +
-          '<div style="display:flex;flex-direction:column;gap:4px;padding:0 10px;font-size:11px;color:#d4d4d8;">' +
-            '<div><span style="color:#71717a;">status:</span> ' + esc(agent.status) + '</div>' +
-            '<div><span style="color:#71717a;">workspace:</span> ' +
+          '<div style="display:flex;flex-direction:column;gap:4px;padding:0 10px;font-size:11px;color:#d4d4d8;flex-shrink:0;">' +
+            '<div><span style="color:#71717a;">status:</span> ' + esc(agent.status) +
+              (agent.status === 'online' ? '' : ' &middot; ' + esc(relativeTime(agent.last_seen))) +
+            '</div>' +
+            '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+              '<span style="color:#71717a;">workspace:</span> ' +
               esc(agent.workspace_path || agent.workspace_default || '—') +
             '</div>' +
-            '<div><span style="color:#71717a;">last seen:</span> ' +
-              esc(relativeTime(agent.last_seen)) +
-            '</div>' +
-            '<div><span style="color:#71717a;">inbox:</span> ' + esc(String(agent.inbox)) + '</div>' +
           '</div>' +
-          '<div style="border-top:1px solid #27272a;padding-top:8px;display:flex;flex-direction:column;gap:6px;">' +
-            '<div style="color:#a1a1aa;font-size:10px;font-weight:600;letter-spacing:0.06em;' +
-            'text-transform:uppercase;padding:0 10px;">Threads</div>' +
-            '<div style="display:flex;flex-direction:column;gap:2px;">' + threadsHtml + '</div>' +
+          '<div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;">' +
+            '<div style="display:flex;flex-direction:column;gap:6px;">' +
+              '<div style="color:#a1a1aa;font-size:10px;font-weight:600;letter-spacing:0.06em;' +
+              'text-transform:uppercase;padding:0 10px;display:flex;align-items:center;gap:6px;">' +
+                '<span>Inbox</span>' +
+                (inboxMessages.length > 0
+                  ? '<span style="background:#ef4444;color:#fff;font-size:9px;padding:1px 6px;' +
+                    'border-radius:9px;font-weight:600;">' + inboxMessages.length + '</span>'
+                  : '') +
+                '<span style="color:#52525b;font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">' +
+                  '— pending messages' +
+                '</span>' +
+              '</div>' +
+              '<div style="display:flex;flex-direction:column;gap:2px;">' + inboxHtml + '</div>' +
+            '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid #27272a;padding-top:10px;">' +
+              '<div style="color:#a1a1aa;font-size:10px;font-weight:600;letter-spacing:0.06em;' +
+              'text-transform:uppercase;padding:0 10px;display:flex;align-items:center;gap:6px;">' +
+                '<span>Threads</span>' +
+                '<span style="color:#52525b;font-size:9px;font-weight:400;text-transform:none;letter-spacing:0;">' +
+                  '— conversation history' +
+                '</span>' +
+              '</div>' +
+              '<div style="display:flex;flex-direction:column;gap:2px;">' + threadsHtml + '</div>' +
+            '</div>' +
           '</div>' +
         '</div>'
       );
@@ -409,24 +724,85 @@ self.__ondaPlugin = {
       );
     }
 
+    function renderMinimizedPill(snap) {
+      const totalInbox = snap.agents.reduce((acc, a) => acc + (a.inbox || 0), 0);
+      const avatarsRow = snap.agents
+        .map((a) => {
+          // Tiny avatar circle, with a status dot overlapping bottom-right.
+          // Inline because the pill content is rendered via dangerouslySetInnerHTML.
+          const dotColor = STATUS_COLOR[a.status] || '#71717a';
+          const img = a.avatar_data_url
+            ? '<img src="' + esc(a.avatar_data_url) + '" alt="' + esc(a.display_name) +
+              '" style="width:20px;height:20px;border-radius:50%;object-fit:cover;' +
+              'object-position:top;display:block;" />'
+            : '<div style="width:20px;height:20px;border-radius:50%;background:' +
+              (AGENT_HUE[a.id] || '#94a3b8') + '22;color:' + (AGENT_HUE[a.id] || '#94a3b8') +
+              ';display:flex;align-items:center;justify-content:center;font-size:10px;' +
+              'font-weight:600;">' + esc((a.display_name || a.id).charAt(0).toUpperCase()) +
+              '</div>';
+          return (
+            '<div style="position:relative;display:inline-block;">' +
+              img +
+              '<span style="position:absolute;bottom:-1px;right:-1px;width:7px;height:7px;' +
+              'border-radius:50%;background:' + dotColor + ';border:1.5px solid #18181b;"></span>' +
+            '</div>'
+          );
+        })
+        .join('');
+      const badge = totalInbox > 0
+        ? '<span style="background:#ef4444;color:#fff;font-size:10px;padding:2px 7px;' +
+          'border-radius:9px;font-weight:600;margin-left:6px;">' + totalInbox + '</span>'
+        : '';
+      return (
+        '<div style="display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;font-size:11px;color:#d4d4d8;">' +
+          '<span style="color:#a1a1aa;margin-right:2px;">Team</span>' +
+          avatarsRow +
+          badge +
+        '</div>'
+      );
+    }
+
+    async function refreshMinimizedContent() {
+      if (!lastSnapshot) return;
+      const html = renderMinimizedPill(lastSnapshot);
+      if (html === lastMinimizedHtml) return;
+      lastMinimizedHtml = html;
+      try {
+        await api.panel.setMinimizedContent(PANEL_ID, html);
+      } catch (_) { /* older Onda builds may not support this; harmless */ }
+    }
+
+    async function pushContent(html) {
+      if (html === lastPushedHtml) return;
+      lastPushedHtml = html;
+      await api.panel.setContent(PANEL_ID, html);
+    }
+
     async function rerender() {
-      if (lastError) {
-        await api.panel.setContent(PANEL_ID, renderError(lastError));
+      if (lastError) { await pushContent(renderError(lastError)); return; }
+      if (!lastSnapshot) { await pushContent(renderEmpty()); return; }
+      if (selectedInboxMsg) {
+        const msg = await readJson(
+          ROOT + '/inboxes/' + selectedInboxMsg.agent + '/' + selectedInboxMsg.file_name
+        );
+        await pushContent(renderInboxMsgReader(msg, selectedInboxMsg.agent));
         return;
       }
-      if (!lastSnapshot) {
-        await api.panel.setContent(PANEL_ID, renderEmpty());
+      if (selectedThread) {
+        const thread = await loadThreadById(selectedThread);
+        await pushContent(renderThreadReader(thread));
         return;
       }
       if (selectedAgent) {
         const agent = lastSnapshot.agents.find((a) => a.id === selectedAgent);
         if (agent) {
-          await api.panel.setContent(PANEL_ID, renderAgentDetail(agent, lastSnapshot));
+          const inbox = await loadInboxMessages(agent.id, 20);
+          await pushContent(renderAgentDetail(agent, lastSnapshot, inbox));
           return;
         }
         selectedAgent = null;
       }
-      await api.panel.setContent(PANEL_ID, renderRoster(lastSnapshot));
+      await pushContent(renderRoster(lastSnapshot));
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -441,6 +817,7 @@ self.__ondaPlugin = {
       }
       await rerender();
       await refreshEntryBadges();
+      await refreshMinimizedContent();
     }
 
     function startPolling() {
@@ -496,6 +873,10 @@ self.__ondaPlugin = {
         icon: 'users',
         tooltip: 'Agent Team',
         priority: 50,
+        // Wire the rail icon to the panel — pass the *bare* panel id; the
+        // appRail handler will prefix it with our pluginId, so we'd end up
+        // with `team-panel:team-panel:main` if we passed the full id.
+        panelId: PANEL_ID,
       });
     } catch (_) { /* capability may not be available in some modes */ }
 
@@ -513,19 +894,26 @@ self.__ondaPlugin = {
 
     /**
      * Update appRail badge + statusbar text with the total pending inbox
-     * count across all agents. Called after every snapshot refresh.
+     * count across all agents. Idempotent — skips the round-trip when the
+     * derived signature hasn't changed since the last tick (cuts log spam
+     * and IPC traffic dramatically given a 5s poll).
      */
     async function refreshEntryBadges() {
       if (!lastSnapshot) return;
       const totalInbox = lastSnapshot.agents.reduce((acc, a) => acc + (a.inbox || 0), 0);
       const onlineCount = lastSnapshot.agents.filter((a) => a.status === 'online').length;
+      const sig = totalInbox + ':' + onlineCount;
+      if (sig === lastEntrySignature) return;
+      lastEntrySignature = sig;
+
+      const tooltip =
+        'Agent Team — ' + onlineCount + ' online' +
+        (totalInbox > 0 ? ', ' + totalInbox + ' pending' : '');
 
       try {
         await api.appRail.updateItem(APP_RAIL_ID, {
           badge: totalInbox > 0 ? String(totalInbox) : undefined,
-          tooltip:
-            'Agent Team — ' + onlineCount + ' online' +
-            (totalInbox > 0 ? ', ' + totalInbox + ' pending' : ''),
+          tooltip,
         });
       } catch (_) {}
 
@@ -533,9 +921,7 @@ self.__ondaPlugin = {
         await api.statusBar.updateItem(STATUS_BAR_ID, {
           text: totalInbox > 0 ? 'Team (' + totalInbox + ')' : 'Team',
           color: totalInbox > 0 ? 'warning' : undefined,
-          tooltip:
-            'Agent Team — ' + onlineCount + ' online' +
-            (totalInbox > 0 ? ', ' + totalInbox + ' pending' : ''),
+          tooltip,
         });
       } catch (_) {}
     }
@@ -544,10 +930,32 @@ self.__ondaPlugin = {
     api.panel.onAction('select-agent', async (data) => {
       const payload = typeof data === 'string' ? safeParse(data) : data;
       selectedAgent = payload?.id || null;
+      selectedThread = null;
       await rerender();
     });
+    api.panel.onAction('select-thread', async (data) => {
+      const payload = typeof data === 'string' ? safeParse(data) : data;
+      selectedThread = payload?.file_id || null;
+      await rerender();
+    });
+    api.panel.onAction('select-inbox-msg', async (data) => {
+      const payload = typeof data === 'string' ? safeParse(data) : data;
+      if (selectedAgent && payload?.file_name) {
+        selectedInboxMsg = { agent: selectedAgent, file_name: payload.file_name };
+        await rerender();
+      }
+    });
     api.panel.onAction('back', async () => {
-      selectedAgent = null;
+      // Back is contextual: drill back up the stack
+      // inbox-msg → agent detail → roster
+      // thread    → wherever we came from (agent detail / roster)
+      if (selectedInboxMsg) {
+        selectedInboxMsg = null;
+      } else if (selectedThread) {
+        selectedThread = null;
+      } else {
+        selectedAgent = null;
+      }
       await rerender();
     });
 
