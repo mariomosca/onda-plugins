@@ -11,7 +11,7 @@
   "capabilities": [
     "panel",
     "panel:interactive",
-    "aiStatus",
+    "terminal:bell",
     "commands",
     "keybindings",
     "statusbar",

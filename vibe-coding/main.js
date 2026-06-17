@@ -4,18 +4,18 @@
  * An interactive-panel plugin. The panel is a sandboxed <iframe> (capability
  * `panel:interactive`) whose srcDoc is a full self-contained HTML document with
  * three canvas games: Snake, Tetris, Pong. The plugin Worker subscribes to the
- * `aiStatus` capability and drives a pause/recall protocol over the postMessage
- * bridge:
+ * `terminal:bell` capability and drives a pause/recall protocol over the
+ * postMessage bridge:
  *
  *   Worker -> iframe : api.panel.postMessage('game', {type, ...})
  *                      (relayed verbatim; iframe gets it as window 'message' e.data)
  *   iframe -> Worker : window.parent.postMessage({type, ...}, '*')
  *                      (relayed verbatim; Worker gets it via api.panel.onMessage(data))
  *
- * Pause rule (the core):
- *   - >=1 session WAITING  -> {type:'recall', ...}  iframe pauses + recall overlay
- *   - 0 waiting & >=1 busy  -> {type:'resume'}       game resumes
- *   - all idle (no busy/wait)-> {type:'idle'}         free play, no forced pause
+ * Pause rule (the core) — driven by the terminal BEL, the reliable signal a CLI
+ * agent emits when a task finishes / input is needed (no TUI/spinner parsing):
+ *   - a terminal RINGS       -> {type:'recall', ...}  iframe pauses + recall overlay
+ *   - user goes back / dismiss -> {type:'resume'}     game resumes (waiting cleared)
  *
  * High scores persist per game via api.storage.
  *
@@ -542,19 +542,18 @@ self.__ondaPlugin = {
       if (stored) highscores = JSON.parse(stored);
     } catch (_) { highscores = {}; }
 
-    const busy = new Set();
+    // Recall is driven by the terminal BEL — the reliable "a session needs you"
+    // signal CLIs emit when a task finishes / input is required (no TUI parsing).
+    // A terminal joins `waiting` when it rings; it leaves when the user goes
+    // back (Back-to-terminal / overlay dismissed / panel reopened) → resume.
     const waiting = new Set();
-    // Remember the most-recent tool/terminal that entered waiting, so the
-    // recall overlay can name it.
     let lastWaitInfo = { tool: null, terminalId: null };
 
-    // Debounce overlay pushes so a burst of transitions doesn't spam the iframe
-    // or the notification system.
+    // Debounce overlay pushes so a burst doesn't spam the iframe / notifications.
     let lastSent = null;
 
     function classify() {
       if (waiting.size > 0) return 'recall';
-      if (busy.size > 0) return 'resume';
       return 'idle';
     }
 
@@ -588,26 +587,22 @@ self.__ondaPlugin = {
             });
           } catch (_) {}
         }
-      } else if (kind === 'resume') {
-        await api.panel.postMessage(PANEL_ID, { type: 'resume' });
       } else {
-        await api.panel.postMessage(PANEL_ID, { type: 'idle' });
+        // Nobody is waiting → free play (resume if it was paused by a recall).
+        await api.panel.postMessage(PANEL_ID, { type: 'resume' });
       }
     }
 
-    function applyStatus(evt) {
+    // A terminal rang the bell → it needs the user. Pause + recall overlay.
+    function bellRecall(evt) {
       if (!evt || !evt.terminalId) return;
-      const id = evt.terminalId;
-      // Reset membership, then re-add based on the new status.
-      busy.delete(id);
-      waiting.delete(id);
-      if (evt.status === 'busy') {
-        busy.add(id);
-      } else if (evt.status === 'waiting') {
-        waiting.add(id);
-        lastWaitInfo = { tool: evt.tool || null, terminalId: id };
-      }
-      // 'idle' | 'unknown' → membership already cleared.
+      waiting.add(evt.terminalId);
+      lastWaitInfo = { tool: evt.tool || null, terminalId: evt.terminalId };
+    }
+
+    // The user went back to the terminal(s) → clear the recall, resume play.
+    function clearWaiting() {
+      waiting.clear();
     }
 
     // ──────────────────────────────────────────────────────────────
@@ -654,42 +649,47 @@ self.__ondaPlugin = {
           highscores[data.game] = data.score;
           try { await api.storage.set(STORAGE_KEY, JSON.stringify(highscores)); } catch (_) {}
         }
-      } else if (data.type === 'focusTerminal') {
-        // No plugin-facing "focus terminal" API exists in this Onda build, so
-        // fall back to a notification + closing the panel to nudge the user
-        // back to the terminal grid.
-        try {
-          await api.notifications.show({
-            type: 'info',
-            title: 'Back to the terminal',
-            message: 'Your AI session is waiting for input.',
-          });
-        } catch (_) {}
-        try { await api.panel.hide(PANEL_ID); } catch (_) {}
+      } else if (data.type === 'focusTerminal' || data.type === 'dismissRecall') {
+        // The user acknowledged the recall (Back-to-terminal button or
+        // dismissing the overlay) → clear waiting and resume free play. No
+        // plugin-facing "focus a specific terminal" API exists in this build,
+        // so for an explicit Back-to-terminal we also nudge + hide the panel.
+        clearWaiting();
+        await pushState(true);
+        if (data.type === 'focusTerminal') {
+          try {
+            await api.notifications.show({
+              type: 'info',
+              title: 'Back to the terminal',
+              message: 'Your AI session is waiting for input.',
+            });
+          } catch (_) {}
+          try { await api.panel.hide(PANEL_ID); } catch (_) {}
+        }
       }
     });
 
     // ──────────────────────────────────────────────────────────────
-    // Subscribe to AI session status — the trigger for pause/recall.
+    // Subscribe to terminal BEL — the reliable pause/recall trigger.
+    // The BEL fires when a CLI agent finishes or needs input; we pause the
+    // game and show the recall overlay. (No TUI/spinner parsing.)
     // ──────────────────────────────────────────────────────────────
     try {
-      const res = await api.aiStatus.subscribe();
-      const snapshot = (res && res.snapshot) || [];
-      for (const s of snapshot) applyStatus(s);
+      await api.terminalBell.subscribe();
       await pushState(true);
     } catch (err) {
-      // aiStatus may be unavailable — the games still work, just no auto-pause.
+      // terminal:bell may be unavailable — games still work, no auto-pause.
       try {
         await api.notifications.show({
           type: 'warning',
           title: 'VibeCoding',
-          message: 'AI status unavailable — auto-pause disabled, free play only.',
+          message: 'Terminal bell unavailable — auto-pause disabled, free play only.',
         });
       } catch (_) {}
     }
 
-    api.on('aiStatus:changed', async (evt) => {
-      applyStatus(evt);
+    api.on('terminalBell', async (evt) => {
+      bellRecall(evt);
       await pushState(false);
     });
 
@@ -707,7 +707,7 @@ self.__ondaPlugin = {
 
     // Cleanup on runtime deactivation.
     self.__ondaPluginDeactivate = async () => {
-      try { await api.aiStatus.unsubscribe(); } catch (_) {}
+      try { await api.terminalBell.unsubscribe(); } catch (_) {}
       try { await api.statusBar.removeItem(STATUS_BAR_ID); } catch (_) {}
     };
   },
