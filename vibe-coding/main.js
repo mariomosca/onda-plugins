@@ -527,7 +527,7 @@ self.__ondaPlugin = {
         '  goHub();',
         '  bridge.send({type:"ready"});',
         '})();',
-        '<\\/script>',
+        '</scr' + 'ipt>',
         '</body></html>'
       ];
       return lines.join('\n');
