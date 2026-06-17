@@ -1,0 +1,54 @@
+{
+  "id": "vibe-coding",
+  "name": "VibeCoding",
+  "version": "1.0.0",
+  "description": "Play real arcade games (Snake, Tetris, Pong) in a floating panel while your AI agents work. The game auto-pauses with a recall overlay the moment any AI session goes back to waiting-for-input, so you never miss a prompt.",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "panel",
+    "panel:interactive",
+    "aiStatus",
+    "commands",
+    "keybindings",
+    "statusbar",
+    "notifications",
+    "storage"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "vibe-coding.toggle",
+        "title": "Toggle VibeCoding",
+        "category": "VibeCoding",
+        "icon": "gamepad-2"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "vibe-coding.toggle",
+        "key": "Cmd+Shift+G",
+        "when": "always",
+        "label": "Toggle VibeCoding"
+      }
+    ],
+    "panels": [
+      {
+        "id": "game",
+        "title": "VibeCoding",
+        "icon": "gamepad-2",
+        "position": "floating",
+        "interactive": true,
+        "floating": {
+          "defaultSize": { "width": 480, "height": 600 },
+          "defaultPosition": "bottom-right",
+          "minimizable": true
+        }
+      }
+    ]
+  }
+}
