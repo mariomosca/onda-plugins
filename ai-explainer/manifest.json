@@ -1,0 +1,40 @@
+{
+  "id": "ai-explainer",
+  "name": "AI Command Explainer",
+  "version": "1.0.0",
+  "description": "Explains the last command or error in the terminal. Reads recent terminal output, matches it against a local knowledge base of common error patterns (git, npm/node, permissions, ports, Docker, etc.), and shows a diagnosis with likely fixes — plus a one-click ready-to-paste prompt for your AI assistant. Fully self-contained, no API key required.",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "keybindings",
+    "contextmenu",
+    "terminal:read",
+    "terminal:subscribe",
+    "clipboard",
+    "dialog",
+    "notifications"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "ai-explainer.explain-last",
+        "title": "Explain Last Command / Error",
+        "category": "AI Explainer",
+        "icon": "help-circle"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "ai-explainer.explain-last",
+        "key": "Cmd+Shift+E",
+        "when": "always",
+        "label": "Explain Last Command / Error"
+      }
+    ]
+  }
+}

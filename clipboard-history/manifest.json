@@ -1,0 +1,58 @@
+{
+  "id": "clipboard-history",
+  "name": "Clipboard History",
+  "version": "1.0.0",
+  "description": "Keeps a persistent history of the last N clipboard entries and lets you re-copy any of them from a floating panel. Polls the system clipboard, de-dupes, pins favorites, and stores everything locally.",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "keybindings",
+    "clipboard",
+    "storage",
+    "panel",
+    "statusbar",
+    "notifications"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "clipboard-history.toggle",
+        "title": "Toggle Clipboard History",
+        "category": "Clipboard",
+        "icon": "clipboard"
+      },
+      {
+        "id": "clipboard-history.clear",
+        "title": "Clear Clipboard History",
+        "category": "Clipboard",
+        "icon": "trash"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "clipboard-history.toggle",
+        "key": "Cmd+Shift+V",
+        "when": "always",
+        "label": "Toggle Clipboard History"
+      }
+    ],
+    "panels": [
+      {
+        "id": "main",
+        "title": "Clipboard History",
+        "icon": "clipboard",
+        "position": "floating",
+        "floating": {
+          "defaultSize": { "width": 360, "height": 480 },
+          "defaultPosition": "bottom-right",
+          "minimizable": true
+        }
+      }
+    ]
+  }
+}

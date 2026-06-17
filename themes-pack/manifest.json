@@ -1,0 +1,186 @@
+{
+  "id": "themes-pack",
+  "name": "Onda Themes Pack",
+  "version": "1.0.0",
+  "description": "A curated pack of 5 dark color themes for Onda — Nord Aurora, Solarized Deep, Tokyo Night, Gruvbox Material, and Catppuccin Mocha. Adds a command to cycle through them and a picker to jump to any theme.",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "themes",
+    "commands",
+    "keybindings",
+    "storage",
+    "dialog",
+    "notifications"
+  ],
+  "activationEvents": ["onStartup"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "themes-pack.cycle",
+        "title": "Cycle Through Pack Themes",
+        "category": "Themes",
+        "icon": "palette"
+      },
+      {
+        "id": "themes-pack.pick",
+        "title": "Pick a Theme…",
+        "category": "Themes",
+        "icon": "palette"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "themes-pack.cycle",
+        "key": "Cmd+Shift+T",
+        "when": "always",
+        "label": "Cycle Pack Themes"
+      }
+    ],
+    "themes": [
+      {
+        "id": "nord-aurora",
+        "name": "Nord Aurora",
+        "isDark": true,
+        "colors": {
+          "bgPrimary": "#2e3440",
+          "bgSecondary": "#3b4252",
+          "bgTertiary": "#434c5e",
+          "bgHover": "#4c566a",
+          "bgActive": "#545d70",
+          "textPrimary": "#eceff4",
+          "textSecondary": "#d8dee9",
+          "textMuted": "#7b88a1",
+          "textInverse": "#2e3440",
+          "borderPrimary": "#434c5e",
+          "borderSecondary": "#3b4252",
+          "borderFocus": "#88c0d0",
+          "accent": "#88c0d0",
+          "accentHover": "#8fbcbb",
+          "accentMuted": "#5e81ac",
+          "success": "#a3be8c",
+          "warning": "#ebcb8b",
+          "error": "#bf616a",
+          "info": "#81a1c1",
+          "terminal": "#272c36",
+          "selection": "rgba(136, 192, 208, 0.22)"
+        }
+      },
+      {
+        "id": "solarized-deep",
+        "name": "Solarized Deep",
+        "isDark": true,
+        "colors": {
+          "bgPrimary": "#002b36",
+          "bgSecondary": "#073642",
+          "bgTertiary": "#0b4250",
+          "bgHover": "#0e4b5a",
+          "bgActive": "#125466",
+          "textPrimary": "#eee8d5",
+          "textSecondary": "#93a1a1",
+          "textMuted": "#586e75",
+          "textInverse": "#002b36",
+          "borderPrimary": "#0b4250",
+          "borderSecondary": "#073642",
+          "borderFocus": "#2aa198",
+          "accent": "#2aa198",
+          "accentHover": "#36c2b6",
+          "accentMuted": "#268bd2",
+          "success": "#859900",
+          "warning": "#b58900",
+          "error": "#dc322f",
+          "info": "#268bd2",
+          "terminal": "#00242e",
+          "selection": "rgba(42, 161, 152, 0.22)"
+        }
+      },
+      {
+        "id": "tokyo-night",
+        "name": "Tokyo Night",
+        "isDark": true,
+        "colors": {
+          "bgPrimary": "#1a1b26",
+          "bgSecondary": "#1f2335",
+          "bgTertiary": "#24283b",
+          "bgHover": "#2a2f45",
+          "bgActive": "#303650",
+          "textPrimary": "#c0caf5",
+          "textSecondary": "#a9b1d6",
+          "textMuted": "#565f89",
+          "textInverse": "#1a1b26",
+          "borderPrimary": "#24283b",
+          "borderSecondary": "#1f2335",
+          "borderFocus": "#7aa2f7",
+          "accent": "#7aa2f7",
+          "accentHover": "#89b4ff",
+          "accentMuted": "#3d59a1",
+          "success": "#9ece6a",
+          "warning": "#e0af68",
+          "error": "#f7768e",
+          "info": "#7dcfff",
+          "terminal": "#16161e",
+          "selection": "rgba(122, 162, 247, 0.22)"
+        }
+      },
+      {
+        "id": "gruvbox-material",
+        "name": "Gruvbox Material",
+        "isDark": true,
+        "colors": {
+          "bgPrimary": "#282828",
+          "bgSecondary": "#32302f",
+          "bgTertiary": "#3c3836",
+          "bgHover": "#45403d",
+          "bgActive": "#504945",
+          "textPrimary": "#ebdbb2",
+          "textSecondary": "#d4be98",
+          "textMuted": "#928374",
+          "textInverse": "#282828",
+          "borderPrimary": "#3c3836",
+          "borderSecondary": "#32302f",
+          "borderFocus": "#a9b665",
+          "accent": "#a9b665",
+          "accentHover": "#bcc66f",
+          "accentMuted": "#89986a",
+          "success": "#b8bb26",
+          "warning": "#fabd2f",
+          "error": "#fb4934",
+          "info": "#83a598",
+          "terminal": "#1d2021",
+          "selection": "rgba(169, 182, 101, 0.22)"
+        }
+      },
+      {
+        "id": "catppuccin-mocha",
+        "name": "Catppuccin Mocha",
+        "isDark": true,
+        "colors": {
+          "bgPrimary": "#1e1e2e",
+          "bgSecondary": "#181825",
+          "bgTertiary": "#313244",
+          "bgHover": "#363a4f",
+          "bgActive": "#45475a",
+          "textPrimary": "#cdd6f4",
+          "textSecondary": "#bac2de",
+          "textMuted": "#6c7086",
+          "textInverse": "#1e1e2e",
+          "borderPrimary": "#313244",
+          "borderSecondary": "#181825",
+          "borderFocus": "#cba6f7",
+          "accent": "#cba6f7",
+          "accentHover": "#d6bbfb",
+          "accentMuted": "#9d7cd8",
+          "success": "#a6e3a1",
+          "warning": "#f9e2af",
+          "error": "#f38ba8",
+          "info": "#89dceb",
+          "terminal": "#11111b",
+          "selection": "rgba(203, 166, 247, 0.22)"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "git-blame",
+  "name": "Git Blame",
+  "version": "1.0.0",
+  "description": "Shows the last commit (author, hash, date, subject) for the repository in the active terminal's working directory, with optional per-file blame. Runs git via the exec capability.",
+  "author": {
+    "name": "Mario Mosca",
+    "url": "https://github.com/mariomosca"
+  },
+  "main": "main.js",
+  "capabilities": [
+    "commands",
+    "keybindings",
+    "exec",
+    "dialog",
+    "clipboard",
+    "statusbar",
+    "notifications"
+  ],
+  "activationEvents": ["onStartup"],
+  "execPatterns": [
+    "git *"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "id": "git-blame.show-last-commit",
+        "title": "Show Last Commit (current repo)",
+        "category": "Git Blame",
+        "icon": "git-commit"
+      },
+      {
+        "id": "git-blame.blame-file",
+        "title": "Blame a File…",
+        "category": "Git Blame",
+        "icon": "user"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "git-blame.show-last-commit",
+        "key": "Cmd+Shift+B",
+        "when": "always",
+        "label": "Show Last Commit"
+      }
+    ]
+  }
+}
