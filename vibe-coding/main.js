@@ -702,7 +702,8 @@ self.__ondaPlugin = {
       handler: async () => { await api.panel.toggle(PANEL_ID); },
     });
 
-    await api.panel.show(PANEL_ID);
+    // Registered but NOT shown at startup — a game must open on demand
+    // (Cmd+Shift+G or the status-bar item), never pop open by itself.
 
     // Cleanup on runtime deactivation.
     self.__ondaPluginDeactivate = async () => {
